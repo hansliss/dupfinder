@@ -10,11 +10,13 @@ and sum up the totals into the directory structure. Then you can use fairly simp
 about duplicates. A few examples:
 
 Find the directory with 100% duplicates in them, sorted by total size:
- select *,100*numdups/numfiles from directory where numdups=numfiles order by totsize desc limit 20;
+```select *,100*numdups/numfiles from directory where numdups=numfiles order by totsize desc limit 20;
+```
 
 Find the directory with 100% duplicates in them, sorted by total number of files:
- select *,100*numdups/numfiles from directory where numdups=numfiles order by numfiles desc limit 20;
+```select *,100*numdups/numfiles from directory where numdups=numfiles order by numfiles desc limit 20;
+```
 
 Find the files that take up the most unnecessary space:
- select * from file join directory on file.parentid = directory.id order by copies*size desc limit 20;
- 
+```select * from file join directory on file.parentid = directory.id order by copies*size desc limit 20;
+```
