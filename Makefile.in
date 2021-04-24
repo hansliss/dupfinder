@@ -1,0 +1,89 @@
+PRODUCT = @PRODUCT@
+VERSION = @VERSION@
+
+SHELL = /bin/sh
+top_srcdir = @top_srcdir@
+srcdir = @srcdir@
+
+.SUFFIXES:
+.SUFFIXES: .c .o
+
+CC = @CC@
+DEFINES = @DEFS@ -DPRODUCT=\"$(PRODUCT)\" -DVERSION=\"$(VERSION)\"
+CFLAGS = -I. @CFLAGS@ $(DEFINES)
+LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@
+INSTALL = @INSTALL@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+bindir = @bindir@
+mandir = @mandir@
+sysconfdir = @sysconfdir@
+datarootdir = @datarootdir@
+
+DISTFILES =
+
+TARGET1=dupfinder
+SOURCES1=dupfinder.c
+OBJS1=dupfinder.o
+
+TARGETS=$(TARGET1) 
+SOURCES=$(SOURCES1)
+HEADERS=
+OBJS=$(OBJS1)
+DISTSRC=aclocal.m4 config.h.in configure configure.ac *.sql $(SOURCES) $(HEADERS) install-sh Makefile.in mkinstalldirs README.md
+DISTBIN=$(TARGETS) *.sql README.md
+
+all: $(TARGETS)
+
+install: all
+	$(top_srcdir)/mkinstalldirs $(bindir)
+	$(INSTALL) $(TARGET1) $(bindir)/
+
+$(TARGET1): $(OBJS1)
+	$(CC) $(CFLAGS) -o $(TARGET1) $(OBJS1) $(LDFLAGS) $(LIBS)
+
+$(OBJS1): $(SOURCES1)
+
+clean:
+	/bin/rm -f $(TARGETS) *.o core $(PRODUCT)-*-bin.tar.gz* $(PRODUCT)-*-src.tar.gz*
+
+distclean: clean config-clean
+
+config-clean: confclean-recursive
+
+confclean-recursive: cfg-clean
+
+cfg-clean:
+	/bin/rm -f Makefile config.h config.status config.cache config.log
+
+mostlyclean: clean
+
+maintainer-clean: clean
+
+package: all
+	tar czf $(PRODUCT)-$(VERSION)-bin.tar.gz $(DISTBIN)
+	md5sum $(PRODUCT)-$(VERSION)-bin.tar.gz > $(PRODUCT)-$(VERSION)-bin.tar.gz.md5
+	tar czf $(PRODUCT)-$(VERSION)-src.tar.gz $(DISTSRC)
+	md5sum $(PRODUCT)-$(VERSION)-src.tar.gz > $(PRODUCT)-$(VERSION)-src.tar.gz.md5
+
+# automatic re-running of configure if the configure.ac file has changed
+${srcdir}/configure: configure.ac 
+	cd ${srcdir} && autoconf
+
+# autoheader might not change config.h.in, so touch a stamp file
+${srcdir}/config.h.in: stamp-h.in
+${srcdir}/stamp-h.in: configure.ac 
+		cd ${srcdir} && autoheader
+		echo timestamp > ${srcdir}/stamp-h.in
+
+config.h: stamp-h
+stamp-h: config.h.in config.status
+	./config.status
+Makefile: Makefile.in config.status
+	./config.status
+config.status: configure
+	./config.status --recheck
+
+
+
