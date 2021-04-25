@@ -35,7 +35,7 @@
  * here, just the database id.
  */
 typedef struct dirinfo {
-  unsigned long id;
+  long id;
   unsigned long numfiles;
   uint64_t totsize;
   unsigned long numdups;
@@ -118,7 +118,7 @@ char *md5sum(char *filepath) {
  * Only the name a parent id are set here, and the
  * new id is returned.
  */
-long createDirRecord(MYSQL *db, char *name, unsigned long parentid) {
+long createDirRecord(MYSQL *db, char *name, long parentid) {
   MYSQL_STMT *stmt=NULL;
   MYSQL_BIND param[2];
   if ((stmt = mysql_stmt_init(db)) == NULL) {
@@ -139,7 +139,7 @@ long createDirRecord(MYSQL *db, char *name, unsigned long parentid) {
   
   param[1].buffer_type = MYSQL_TYPE_LONG;
   param[1].buffer = (void *)&parentid;
-  param[1].is_unsigned = 1;
+  param[1].is_unsigned = 0;
   param[1].is_null = 0;
 
   if (mysql_stmt_bind_param(stmt, param) != 0) {
@@ -164,6 +164,7 @@ long createDirRecord(MYSQL *db, char *name, unsigned long parentid) {
  * collected so far.
  */
 void updateDirRecord(MYSQL *db, dirtree t) {
+  uint64_t n;
   MYSQL_STMT *stmt=NULL;
   MYSQL_BIND param[4];
   if ((stmt = mysql_stmt_init(db)) == NULL) {
@@ -187,14 +188,14 @@ void updateDirRecord(MYSQL *db, dirtree t) {
   param[1].is_unsigned = 1;
   param[1].is_null = 0;
 
-  param[2].buffer_type = MYSQL_TYPE_LONG;
+  param[2].buffer_type = MYSQL_TYPE_LONGLONG;
   param[2].buffer = (void *)&(t->totsize);
   param[2].is_unsigned = 1;
   param[2].is_null = 0;
 
   param[3].buffer_type = MYSQL_TYPE_LONG;
   param[3].buffer = (void *)&(t->id);
-  param[3].is_unsigned = 1;
+  param[3].is_unsigned = 0;
   param[3].is_null = 0;
 
   if (mysql_stmt_bind_param(stmt, param) != 0) {
@@ -207,6 +208,11 @@ void updateDirRecord(MYSQL *db, dirtree t) {
    exit(-4);
   }
 
+  if ((n=mysql_affected_rows(db)) != 1) {
+    fprintf(stderr, "Failed: update directory %ld with numdups=%ld, numfiles=%ld, totsize=%ld affected %ld rows\n", t->id, t->numdups, t->numfiles, t->totsize, n);
+    //    exit(-302);
+  }
+
   mysql_stmt_close(stmt);
 }
 
@@ -214,7 +220,7 @@ void updateDirRecord(MYSQL *db, dirtree t) {
  * Create a file record, with name, parent, size and hash value.
  * We don't keep track of this info in memory, only in the database.
  */
-void createFileRecord(MYSQL *db, char *name, unsigned long parentid, char *hash, uint64_t size) {
+void createFileRecord(MYSQL *db, char *name, long parentid, char *hash, uint64_t size) {
   MYSQL_STMT *stmt=NULL;
   MYSQL_BIND param[4];
   if ((stmt = mysql_stmt_init(db)) == NULL) {
@@ -235,7 +241,7 @@ void createFileRecord(MYSQL *db, char *name, unsigned long parentid, char *hash,
   
   param[1].buffer_type = MYSQL_TYPE_LONG;
   param[1].buffer = (void *)&parentid;
-  param[1].is_unsigned = 1;
+  param[1].is_unsigned = 0;
   param[1].is_null = 0;
 
   param[2].buffer_type = MYSQL_TYPE_LONGLONG;
@@ -267,7 +273,7 @@ void createFileRecord(MYSQL *db, char *name, unsigned long parentid, char *hash,
  * Traverse the directory structure, building the directory tree both in
  * memory and in the database, as we go along.
  */
-void calcdir(MYSQL *db, dirtree *t, char *dirpath, unsigned long parentid) {
+void calcdir(MYSQL *db, dirtree *t, char *dirpath, long parentid) {
   struct stat fs;
   struct dirent *de;
   char namebuf[131072];
@@ -419,7 +425,7 @@ void sumUp(MYSQL *db, dirtree t) {
  * Add a directory to the correct parent. If the parent
  * doesn't exist in the tree, this will ultimately return 0.
  */
-int adddir(dirtree *t, unsigned long id, unsigned long parentid, unsigned long numfiles, uint64_t totsize, unsigned long numdups) {
+int adddir(dirtree *t, long id, long parentid, unsigned long numfiles, uint64_t totsize, unsigned long numdups) {
   int i;
   if ((*t)->id == parentid) {
     dirtree child = newDirinfo();
@@ -442,7 +448,9 @@ int adddir(dirtree *t, unsigned long id, unsigned long parentid, unsigned long n
 void readdirsfromdb(MYSQL *db, dirtree *t) {
   MYSQL_RES *res = NULL;
   MYSQL_ROW row;
-  long id, parentid, numfiles, totsize, numdups;
+  long id, parentid;
+  unsigned long numfiles, numdups;
+  uint64_t totsize;
   fprintf(stderr, "Counting files and dups, and adding up sizes, step 1.\n");
   mysql_query(db, RECOUNTDIR);
   fprintf(stderr, "Reading directory tree from database.\n");
@@ -496,8 +504,10 @@ int main(int argc, char *argv[]) {
   mysql_query(&db, EMPTYFILE);
 
   for (i=1; i<argc; i++) {
+    dirtree child=NULL;
     fprintf(stderr, "Traversing %s and calculating hashes.\n", argv[i]);
-    calcdir(&db, &t, argv[i], -1);
+    calcdir(&db, &child, argv[i], -1);
+    addChild(t, child);
   }
 
   // readdirsfromdb(&db, &t);

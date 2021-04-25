@@ -9,12 +9,12 @@ Run dupfinder with one or more directory paths as arguments, and let it calculat
 and sum up the totals into the directory structure. Then you can use fairly simple SQL queries to find info
 about duplicates. A few examples:
 
-Find the directory with 100% duplicates in them, sorted by total size:
+Find directories with 100% duplicates in them, sorted by total size:
 ```
 select *,100*numdups/numfiles from directory where numdups=numfiles order by totsize desc limit 20;
 ```
 
-Find the directory with 100% duplicates in them, sorted by total number of files:
+Find directories with 100% duplicates in them, sorted by total number of files:
 ```
 select *,100*numdups/numfiles from directory where numdups=numfiles order by numfiles desc limit 20;
 ```
