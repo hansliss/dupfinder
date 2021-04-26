@@ -7,8 +7,16 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <mysql/mysql.h>
+#include <unistd.h>
 
 #include "config.h"
+#include "conffile.h"
+
+int verbose=0;
+
+void usage(char *progname) {
+  fprintf(stderr, "Usage: %s [-v ...] -c <conffile> -i <instance> <root> [<root> ...]\n", progname);
+}
 
 /*
  * Collecting the SQL queries up here will remove them from
@@ -154,8 +162,10 @@ long createDirRecord(MYSQL *db, char *name, long parentid) {
 
   long newid = mysql_insert_id(db);
   mysql_stmt_close(stmt);
-  
-  fprintf(stderr, "Dir: \"%s\", parent id %ld\n", name, parentid);
+
+  if (verbose >= 2) {
+    fprintf(stderr, "Dir: \"%s\", parent id %ld\n", name, parentid);
+  }
   return newid;
 }
 
@@ -164,7 +174,6 @@ long createDirRecord(MYSQL *db, char *name, long parentid) {
  * collected so far.
  */
 void updateDirRecord(MYSQL *db, dirtree t) {
-  uint64_t n;
   MYSQL_STMT *stmt=NULL;
   MYSQL_BIND param[4];
   if ((stmt = mysql_stmt_init(db)) == NULL) {
@@ -206,11 +215,6 @@ void updateDirRecord(MYSQL *db, dirtree t) {
   if (mysql_stmt_execute(stmt) != 0) {
    fprintf(stderr, "mysql_execute(): %s", mysql_error(db));
    exit(-4);
-  }
-
-  if ((n=mysql_affected_rows(db)) != 1) {
-    fprintf(stderr, "Failed: update directory %ld with numdups=%ld, numfiles=%ld, totsize=%ld affected %ld rows\n", t->id, t->numdups, t->numfiles, t->totsize, n);
-    //    exit(-302);
   }
 
   mysql_stmt_close(stmt);
@@ -265,8 +269,10 @@ void createFileRecord(MYSQL *db, char *name, long parentid, char *hash, uint64_t
   }
 
   mysql_stmt_close(stmt);
-  
-  fprintf(stderr, "File %s: parent id %ld, %ld bytes, hash: %s\n", name, parentid, size, hash);
+
+  if (verbose >= 2) {
+    fprintf(stderr, "File %s: parent id %ld, %ld bytes, hash: %s\n", name, parentid, size, hash);
+  }
 }
 
 /*
@@ -338,7 +344,9 @@ void calcdir(MYSQL *db, dirtree *t, char *dirpath, long parentid) {
 int setnumdups1(dirtree t, long id, long numdups) {
   int i, r=0;
   if (t->id == id) {
-    fprintf(stderr, "setnumdups1(%ld, %ld)\n", id, numdups);
+    if (verbose >= 2) {
+      fprintf(stderr, "setnumdups1(%ld, %ld)\n", id, numdups);
+    }
     t->numdups = numdups;
     return 1;
   } else {
@@ -359,7 +367,9 @@ unsigned long sumnumdups(MYSQL *db, dirtree t) {
     t->numdups += sumnumdups(db, t->children[i]);
   }
   updateDirRecord(db, t);
-  fprintf(stderr, "sumnumdups(%ld): %ld\n", t->id, t->numdups);
+  if (verbose >= 2) {
+    fprintf(stderr, "sumnumdups(%ld): %ld\n", t->id, t->numdups);
+  }
   return t->numdups;
 }
 
@@ -390,17 +400,23 @@ void sumUp(MYSQL *db, dirtree t) {
   MYSQL_ROW row;
   // This will count the number of copies of each file and
   // store it in the "copies" value in the file table
-  fprintf(stderr, "Counting duplicates.\n");
+  if (verbose) {
+    fprintf(stderr, "Counting duplicates.\n");
+  }
   mysql_query(db, COUNTDUPS);
 
   // This will sum the number of files in each directory
   // that have more than one copy.
-  fprintf(stderr, "Summing up, first step.\n");
+  if (verbose) {
+    fprintf(stderr, "Summing up, first step.\n");
+  }
   mysql_query(db, SUMSTEP1);
 
   // Now we read in the number of duplicates from the database
   // and update our internal structure
-  fprintf(stderr, "Summing up, second step.\n");
+  if (verbose) {
+    fprintf(stderr, "Summing up, second step.\n");
+  }
   mysql_query(db, READDIRS);
   if ((res = mysql_store_result(db)) == NULL) {
     fprintf(stderr, "mysql_store_result(): %s", mysql_error(db));
@@ -417,7 +433,9 @@ void sumUp(MYSQL *db, dirtree t) {
 
   // Finally, we add up all the duplicates in memory, and save them
   // to the database at the same time
-  fprintf(stderr, "Summing up, third step.\n");
+  if (verbose) {
+    fprintf(stderr, "Summing up, third step.\n");
+  }
   sumnumdups(db, t);
 }
 
@@ -451,9 +469,13 @@ void readdirsfromdb(MYSQL *db, dirtree *t) {
   long id, parentid;
   unsigned long numfiles, numdups;
   uint64_t totsize;
-  fprintf(stderr, "Counting files and dups, and adding up sizes, step 1.\n");
+  if (verbose) {
+    fprintf(stderr, "Counting files and dups, and adding up sizes, step 1.\n");
+  }
   mysql_query(db, RECOUNTDIR);
-  fprintf(stderr, "Reading directory tree from database.\n");
+  if (verbose) {
+    fprintf(stderr, "Reading directory tree from database.\n");
+  }
   mysql_query(db, READDIRSALL);
   if ((res = mysql_store_result(db)) == NULL) {
     fprintf(stderr, "mysql_store_result(): %s", mysql_error(db));
@@ -475,9 +497,13 @@ void readdirsfromdb(MYSQL *db, dirtree *t) {
     }
   }
   mysql_free_result(res);
-  fprintf(stderr, "Sum up number of files, step 2.\n");
+  if (verbose) {
+    fprintf(stderr, "Sum up number of files, step 2.\n");
+  }
   sumnumfiles(*t);
-  fprintf(stderr, "Adding up sizes, step 2.\n");
+  if (verbose) {
+    fprintf(stderr, "Adding up sizes, step 2.\n");
+  }
   sumsize(*t);
 }
 
@@ -485,12 +511,60 @@ int main(int argc, char *argv[]) {
   MYSQL db;
   dirtree t = NULL;
   int i;
+  int rehash=1;
+  char db_host[64];
+  char db_user[16];
+  char db_password[128];
+  char db_db[16];
+  char *conffile=NULL;
+  char *instance=NULL;
+
+  db_host[0] = '\0';
+  db_user[0] = '\0';
+  db_password[0] = '\0';
+  db_db[0] = '\0';
+  
+  int o;
+
+  while ((o = getopt(argc, argv, "c:i:ve"))!=-1) {
+    switch (o) {
+    case 'c':
+      conffile = optarg;
+      break;
+    case 'i':
+      instance = optarg;
+      break;
+    case 'v':
+      verbose++;
+      break;
+    case 'e':
+      rehash = 0;
+      break;
+    default:
+      usage(argv[0]);
+      return -1;
+      break;
+    }
+  }
+
+  if (conffile && instance) {
+    conf_getvar(conffile, "database", instance, "db_host", db_host, sizeof(db_host));
+    conf_getvar(conffile, "database", instance, "db_user", db_user, sizeof(db_user));
+    conf_getvar(conffile, "database", instance, "db_password", db_password, sizeof(db_password));
+    conf_getvar(conffile, "database", instance, "db_db", db_db, sizeof(db_db));
+  }
+
+  if (!strlen(db_host) || !strlen(db_user) || !strlen(db_password) || !strlen(db_db)) {
+    usage(argv[0]);
+    return -1;
+  }
+    
   if (!(mysql_init(&db))) {
    fprintf(stderr, "mysql_init(): %s", mysql_error(&db));
     return -21;
   }
 
-  if (!(mysql_real_connect(&db, "localhost", "dupfinder", "flarpnurgel", "dupfinder", 0, NULL, 0))) {
+  if (!(mysql_real_connect(&db, db_host, db_user, db_password, db_db, 0, NULL, 0))) {
    fprintf(stderr, "mysql_real_connect(): %s", mysql_error(&db));
     return -22;
   }
@@ -498,22 +572,35 @@ int main(int argc, char *argv[]) {
   t = newDirinfo();
   t->id = -1;
 
-  fprintf(stderr, "Emptying file table\n");
-  mysql_query(&db, EMPTYDIR);
-  fprintf(stderr, "Emptying directory table\n");
-  mysql_query(&db, EMPTYFILE);
-
-  for (i=1; i<argc; i++) {
-    dirtree child=NULL;
-    fprintf(stderr, "Traversing %s and calculating hashes.\n", argv[i]);
-    calcdir(&db, &child, argv[i], -1);
-    addChild(t, child);
+  if (rehash) {
+    if (verbose) {
+      fprintf(stderr, "Emptying file table\n");
+    }
+    mysql_query(&db, EMPTYDIR);
+    if (verbose) {
+      fprintf(stderr, "Emptying directory table\n");
+    }
+    mysql_query(&db, EMPTYFILE);
+    
+    for (i=optind; i<argc; i++) {
+      dirtree child=NULL;
+      while (strlen(argv[i]) > 1 && argv[i][strlen(argv[i]) - 1] == '/') {
+	argv[i][strlen(argv[i]) - 1] = '\0';
+      }
+      if (verbose) {
+	fprintf(stderr, "Traversing %s and calculating hashes.\n", argv[i]);
+      }
+      calcdir(&db, &child, argv[i], -1);
+      addChild(t, child);
+    }
+  } else {
+    readdirsfromdb(&db, &t);
   }
 
-  // readdirsfromdb(&db, &t);
-
   sumUp(&db, t);
-  fprintf(stderr, "Done. Cleaning up.\n");
+  if (verbose) {
+    fprintf(stderr, "Done. Cleaning up.\n");
+  }
   mysql_close(&db);
   freetree(&t);
   return 0;

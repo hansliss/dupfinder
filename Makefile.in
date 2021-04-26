@@ -24,8 +24,8 @@ datarootdir = @datarootdir@
 DISTFILES =
 
 TARGET1=dupfinder
-SOURCES1=dupfinder.c
-OBJS1=dupfinder.o
+SOURCES1=dupfinder.c conffile.c varlist.c
+OBJS1=dupfinder.o conffile.o varlist.o
 
 TARGETS=$(TARGET1) 
 SOURCES=$(SOURCES1)
